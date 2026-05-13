@@ -85,9 +85,63 @@ Upper layers must always link back to evidence in lower layers.
 
 ## Install
 
-There is no install script. Hand this repository to Claude (or your agent of choice) and say *"please install this skill"*. The agent will read this README and perform the steps below.
+There is no installer binary — installation is performed by your agent. Clone this repo somewhere stable (e.g. `~/code/chrono-palace-memory`), then paste the prompt below verbatim into a Claude Code (or Codex) session.
 
-Restart Claude Code. The skill becomes discoverable in any session.
+### Agent install prompt (copy this)
+
+````text
+Please install the chrono-palace-memory skill from <REPO_PATH> for me.
+
+Perform every step below. Stop and ask only if a step fails:
+
+1. Confirm the repo at <REPO_PATH> contains SKILL.md, tools/install-hooks.py, and templates/MEMORY.md. Abort if any is missing.
+2. Make the skill discoverable by Claude Code:
+   - mkdir -p ~/.claude/skills
+   - ln -sfn <REPO_PATH> ~/.claude/skills/chrono-palace-memory
+   (Use a symlink so `git pull` in the repo updates the skill in place. If symlinks are blocked, `cp -R` instead.)
+3. Initialize the memory store at ~/.memory/ if it does not exist:
+   - mkdir -p ~/.memory
+   - If ~/.memory/MEMORY.md is absent, copy templates/MEMORY.md to ~/.memory/MEMORY.md.
+   - Do NOT touch ~/.memory/ if MEMORY.md already exists — that means a store is already in use.
+4. Install the required lifecycle hooks:
+   - python3 <REPO_PATH>/tools/install-hooks.py --target both
+   (Use `--target claude` if Codex is not installed. The installer merges into existing settings.json / hooks.json.)
+5. Verify the install:
+   - python3 <REPO_PATH>/tools/validate.py    # must exit 0
+   - cat ~/.claude/settings.json | python3 -m json.tool | grep memory-hook   # confirms hook command is present
+6. Print a one-line summary: skill path, memory store path, hook threshold. Then tell me to restart Claude Code.
+````
+
+Replace `<REPO_PATH>` with the absolute path to your clone before pasting.
+
+After the agent finishes, **restart Claude Code**. The skill becomes discoverable in any session, the `SessionStart` hook injects `~/.memory/MEMORY.md` as context, and the `Stop` hook enforces the memory writeback check.
+
+### Required: lifecycle hooks
+
+Lifecycle hooks are **mandatory**. Without them the agent has no `SessionStart` injection of `MEMORY.md`, no `Stop`-time memory-check, and no `PostToolUse` dirty tracking — the skill effectively does nothing on its own. Ask your agent to install them right after installing the skill:
+
+```bash
+python3 tools/install-hooks.py --target both
+```
+
+The installer merges existing config instead of replacing it:
+
+- Claude Code: `~/.claude/settings.json`
+- Codex: `~/.codex/hooks.json`
+
+Installed hooks call `tools/memory-hook.py`:
+
+- `SessionStart` injects `~/.memory/MEMORY.md` as context.
+- `PostToolUse` marks the current turn dirty only after `Edit`, `Write`, or `Bash`.
+- `Stop` asks the agent to consider writing a session memory only when the turn is dirty or the transcript crosses the line threshold.
+
+Tune the threshold (higher = fewer interruptions):
+
+```bash
+python3 tools/install-hooks.py --target both --threshold-lines 160
+```
+
+Hook output is JSON, so it works with Claude Code and Codex lifecycle-hook parsers. If your Codex build disables hooks, enable Codex lifecycle hooks first, then rerun the installer.
 
 ### Uninstall
 
@@ -125,33 +179,6 @@ python3 tools/embed.py            # downloads ~120MB model on first run; subsequ
 ```
 
 Once the cache exists, `tools/search.py` automatically uses neural cosine. Force a backend with `--backend {neural,tfidf}`. Privacy: all embedding runs locally — memory content never leaves the machine.
-
-### Optional: lifecycle hooks
-
-Ask your agent to install lifecycle hooks after it installs this skill:
-
-```bash
-python3 tools/install-hooks.py --target both
-```
-
-The installer merges existing config instead of replacing it:
-
-- Claude Code: `~/.claude/settings.json`
-- Codex: `~/.codex/hooks.json`
-
-Installed hooks call `tools/memory-hook.py`:
-
-- `SessionStart` injects `~/.memory/MEMORY.md` as context.
-- `PostToolUse` marks the current turn dirty only after `Edit`, `Write`, or `Bash`.
-- `Stop` asks the agent to consider writing a session memory only when the turn is dirty or the transcript crosses the line threshold.
-
-Tune the threshold:
-
-```bash
-python3 tools/install-hooks.py --target both --threshold-lines 160
-```
-
-Hook output is JSON, so it works with Claude Code and Codex lifecycle-hook parsers. If your Codex build disables hooks, enable Codex lifecycle hooks first, then rerun the installer.
 
 ### Optional: cron status
 

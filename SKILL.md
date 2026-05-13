@@ -63,7 +63,7 @@ description: Use when starting any conversation or performing memory operations 
 
 ## Hook 策略（Claude Code / Codex）
 
-README 负责安装 hook；本文件负责运行规则。安装时让 agent 运行：
+**Hook 是必装项，不是可选项。** 没装 hook 就没有 SessionStart 注入、没有 Stop 时的写回检查，整套记忆系统等于没启动。README 负责安装步骤；本文件负责运行规则。安装命令：
 
 ```bash
 python3 tools/install-hooks.py --target both
