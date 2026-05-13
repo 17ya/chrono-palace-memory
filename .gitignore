@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Backup files
+*.bak.*
+*.orig
+
+# Personal memory data — MUST NEVER be committed.
+# Actual memory data lives in ~/.memory/, but defend against accidental
+# creation of these directories inside the repo.
+memory/
+.memory/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Build / cache
+node_modules/
+dist/
+.cache/
+
+# Logs
+*.log

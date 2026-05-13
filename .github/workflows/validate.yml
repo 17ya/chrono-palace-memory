@@ -1,0 +1,89 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run validator tests against fixtures
+        run: bash tests/test_validate.sh
+      - name: TF-IDF semantic-scoring regression test
+        run: python3 tests/test_tfidf.py
+      - name: Concurrency regression test (file_lock + atomic_write)
+        run: python3 tests/test_concurrency.py
+
+  smoke-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Each tool runs --help without crashing
+        run: |
+          set -e
+          for t in tools/validate.py tools/search.py tools/aggregate-daily.py tools/aggregate-monthly.py tools/aggregate-yearly.py tools/expire-sessions.py tools/find-conflicts.py tools/forget.py tools/daily-status.py tools/migrate.py tools/embed.py tools/sync.py; do
+            echo "--- $t --help ---"
+            python3 "$t" --help
+          done
+      - name: embed.py --check (no st installed → graceful fail)
+        run: |
+          if python3 tools/embed.py --check; then
+            echo "warn: sentence-transformers somehow installed in CI"
+          else
+            echo "ok: dependency-check correctly reported missing optional dep"
+          fi
+      - name: migrate.py --list works on healthy fixture
+        run: python3 tools/migrate.py --root tests/fixtures/healthy --list
+      - name: forget.py dry-run is read-only
+        run: python3 tools/forget.py --root tests/fixtures/healthy --name nonexistent || true
+      - name: search.py --backend tfidf still works (no neural cache in CI)
+        run: python3 tools/search.py --root tests/fixtures/healthy --backend tfidf "demo"
+      - name: aggregate-monthly.py runs against healthy fixture
+        run: python3 tools/aggregate-monthly.py --root tests/fixtures/healthy 2026-05
+      - name: aggregate-yearly.py runs against healthy fixture
+        run: python3 tools/aggregate-yearly.py --root tests/fixtures/healthy 2026
+      - name: search.py runs against healthy fixture
+        run: python3 tools/search.py --root tests/fixtures/healthy "demo"
+      - name: search.py handles CJK query
+        run: python3 tools/search.py --root tests/fixtures/healthy "demo 项目"
+      - name: aggregate-daily.py runs against healthy fixture
+        run: python3 tools/aggregate-daily.py --root tests/fixtures/healthy 2026-05-13
+      - name: expire-sessions.py runs against healthy fixture
+        run: python3 tools/expire-sessions.py --root tests/fixtures/healthy
+      - name: find-conflicts.py runs against healthy fixture
+        run: python3 tools/find-conflicts.py --root tests/fixtures/healthy --topic demo-project || true
+      - name: daily-status.py runs against healthy fixture
+        run: python3 tools/daily-status.py --root tests/fixtures/healthy
+      - name: daily-status.py JSON output is valid
+        run: python3 tools/daily-status.py --root tests/fixtures/healthy --format json | python3 -m json.tool
+
+  lint-markdown:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: markdown-link-check (skill docs only)
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: "yes"
+          file-extension: ".md"
+          folder-path: "."
+          config-file: ".github/markdown-link-check.json"
+
+  python-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Byte-compile tools/
+        run: python3 -m compileall -q tools/

@@ -1,0 +1,12 @@
+# Optional dependencies — install only if you want neural-embedding search.
+#
+# Without these, search.py automatically falls back to a stdlib TF-IDF
+# backend that works fine for small-to-medium memory stores.
+#
+# Install with:
+#   pip install -r requirements-optional.txt
+#
+# Privacy: all embedding happens locally. No network calls after the
+# initial model download (~120MB cached under ~/.cache/huggingface/).
+
+sentence-transformers>=2.3,<5
