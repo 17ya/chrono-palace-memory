@@ -53,13 +53,34 @@ description: Use when starting any conversation or performing memory operations 
 
 | 类型 | 存储位置 | 生命周期 | 写入时机 |
 |------|---------|---------|---------|
-| **Session 会话** | `~/.memory/sessions/YYYY/MM/DD/session_NNN.md` | 30 天后压缩进 daily 并删除 | 每次对话结束时 |
+| **Session 会话** | `~/.memory/sessions/YYYY/MM/DD/session_NNN.md` | 30 天后压缩进 daily 并删除 | Stop hook 要求检查且确有 durable 信息时 |
 | **Daily 每日** | `~/.memory/daily/YYYY/MM/DD.md` | 长期保存，被月度记忆压缩 | 每日结束（或下一次会话开始时回填） |
 | **Palace 领域宫殿** | `~/.memory/palace/<room>.md` | 长期，由 daily 持续更新 | 主题状态变化时 |
 | **Entity 实体** | `~/.memory/entities/<type>/<name>.md` | 长期，按对象组织 | 学到稳定对象信息时 |
 | **Reflection 反思** | `~/.memory/palace/learned_patterns.md` | 长期，需多次证据 | 多次会话后才提升 |
 
 > **关键澄清**：写 session **不等于**提升偏好/事实到 palace。Session 是临时层（30 天 TTL），是事实的"原始入口"。要进 palace/entity 必须经过 daily 聚合 + 升级规则（≥2 次证据进 entity，≥3 次进 palace）。
+
+## Hook 策略（Claude Code / Codex）
+
+README 负责安装 hook；本文件负责运行规则。安装时让 agent 运行：
+
+```bash
+python3 tools/install-hooks.py --target both
+```
+
+安装后：
+
+- `SessionStart`：注入 `~/.memory/MEMORY.md`，让 agent 一开始有索引。
+- `PostToolUse`：仅当本轮触发 `Edit` / `Write` / `Bash` 时标记 dirty。
+- `Stop`：仅当 dirty 或 transcript 行数跨过阈值时 block，让 agent 继续检查是否需要写 session。
+
+Stop 被 block 时不要机械写记忆。先判断本轮是否学到 durable 信息：
+
+- 有：按模板写 `sessions/YYYY/MM/DD/session_NNN.md`，同步更新 `MEMORY.md`，再结束。
+- 没有：明确说明本轮没有可持久化记忆，然后结束。
+
+`stop_hook_active` 为 true 时不要再次 block，避免递归。
 
 ## 五层架构
 
@@ -96,7 +117,7 @@ description: Use when starting any conversation or performing memory operations 
 digraph write_flow {
   "对话进行中" [shape=doublecircle];
   "学到事实/偏好/决策?" [shape=diamond];
-  "会话结束?" [shape=diamond];
+  "Stop hook 触发?" [shape=diamond];
   "next-day 启动?" [shape=diamond];
   "Multi-session 证据累积?" [shape=diamond];
   "写 session 摘要" [shape=box];
@@ -107,8 +128,8 @@ digraph write_flow {
 
   "对话进行中" -> "学到事实/偏好/决策?";
   "学到事实/偏好/决策?" -> "回到对话" [label="否"];
-  "学到事实/偏好/决策?" -> "会话结束?" [label="是"];
-  "会话结束?" -> "写 session 摘要" [label="是"];
+  "学到事实/偏好/决策?" -> "Stop hook 触发?" [label="是"];
+  "Stop hook 触发?" -> "写 session 摘要" [label="dirty/threshold"];
   "写 session 摘要" -> "next-day 启动?";
   "next-day 启动?" -> "汇总成 daily" [label="是"];
   "汇总成 daily" -> "更新 palace/entity";
@@ -165,7 +186,7 @@ digraph write_flow {
 | "用户没明说但我推断..." | 不要写。等多次证据。 |
 | "这是一次性的，但很有意思" | 不写。一次性 = 临时事实，不进长期记忆。 |
 | "MEMORY.md 里写详情更方便" | 不行。MEMORY.md 是索引。内容写到单独文件。 |
-| "今天的事先放着，明天再整理" | 必须在会话结束时至少留 session 摘要。 |
+| "今天的事先放着，明天再整理" | Stop hook 要求检查时，必须判断是否写 session；有 durable 信息就立刻写。 |
 | "这次对话看起来不需要记忆，跳过 MEMORY.md" | 启动序列没有例外。你不读就不知道需不需要。 |
 | "写入完直接结束，索引下次再说" | 索引同步必须和写入在**同一个 tool-call 批次**。 |
 
@@ -182,6 +203,8 @@ digraph write_flow {
 - `python3 tools/find-conflicts.py --topic <topic>` — 找潜在冲突
 - `python3 tools/forget.py --topic <term>` — 用户要求遗忘时软删除（dry-run，--apply 才生效）
 - `python3 tools/daily-status.py` — 快速状态检查（适合 SessionStart hook / cron）
+- `python3 tools/memory-hook.py` — Claude Code / Codex 生命周期 hook 入口
+- `python3 tools/install-hooks.py --target both` — 安装 Claude Code / Codex hooks
 - `python3 tools/migrate.py [--list|--apply]` — 应用 schema 迁移
 - `python3 tools/embed.py` — 构建 neural embedding 缓存（需安装 sentence-transformers）
 - `python3 tools/sync.py` — 多机同步（`~/.memory` 作为 private git repo）

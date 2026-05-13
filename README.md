@@ -68,6 +68,7 @@ Upper layers must always link back to evidence in lower layers.
 │   ├── validate.py search.py daily-status.py
 │   ├── aggregate-daily.py aggregate-monthly.py aggregate-yearly.py
 │   ├── expire-sessions.py find-conflicts.py forget.py
+│   ├── memory-hook.py install-hooks.py
 │   ├── embed.py                  #   neural-embedding cache (optional)
 │   ├── migrate.py                #   schema migration runner
 │   └── migrations/               #   dated, idempotent migration scripts
@@ -125,43 +126,47 @@ python3 tools/embed.py            # downloads ~120MB model on first run; subsequ
 
 Once the cache exists, `tools/search.py` automatically uses neural cosine. Force a backend with `--backend {neural,tfidf}`. Privacy: all embedding runs locally — memory content never leaves the machine.
 
-### Optional: auto-status on every session
+### Optional: lifecycle hooks
 
-The skill is invoked on demand, but it's useful to know at session start whether yesterday's daily was written or if any sessions are stuck. `tools/daily-status.py` is read-only, runs in milliseconds, and is ideal for this.
+Ask your agent to install lifecycle hooks after it installs this skill:
 
-**Option 1 — Claude Code SessionStart hook** (recommended). Add to `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/skills/chrono-palace-memory/tools/daily-status.py"
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+python3 tools/install-hooks.py --target both
 ```
 
-The hook prints status to stdout; Claude Code injects it as additional context at session start.
+The installer merges existing config instead of replacing it:
 
-**Option 2 — cron** (headless / server installs). Run nightly to flag unpromoted sessions:
+- Claude Code: `~/.claude/settings.json`
+- Codex: `~/.codex/hooks.json`
+
+Installed hooks call `tools/memory-hook.py`:
+
+- `SessionStart` injects `~/.memory/MEMORY.md` as context.
+- `PostToolUse` marks the current turn dirty only after `Edit`, `Write`, or `Bash`.
+- `Stop` asks the agent to consider writing a session memory only when the turn is dirty or the transcript crosses the line threshold.
+
+Tune the threshold:
+
+```bash
+python3 tools/install-hooks.py --target both --threshold-lines 160
+```
+
+Hook output is JSON, so it works with Claude Code and Codex lifecycle-hook parsers. If your Codex build disables hooks, enable Codex lifecycle hooks first, then rerun the installer.
+
+### Optional: cron status
+
+For headless / server installs, run nightly to flag unpromoted sessions:
 
 ```
 # crontab -e
 15 23 * * * python3 ~/.claude/skills/chrono-palace-memory/tools/daily-status.py >> ~/.memory/.status.log 2>&1
 ```
 
-Neither option writes any memory — they only report. Actually promoting / expiring still requires explicit `/memory-aggregate`, `/memory-expire --apply` etc.
+Cron status is read-only. Actually promoting / expiring still requires explicit `/memory-aggregate`, `/memory-expire --apply` etc.
 
 ## How it gets used
 
-When Claude Code starts a session, the `chrono-palace-memory` skill is in the available-skills list. As soon as the conversation involves memory operations (writing observations, recalling past decisions, etc.), Claude invokes the skill and follows the rules in [SKILL.md](SKILL.md).
+When Claude Code or Codex starts a session with hooks installed, the memory index is injected as context. As soon as the conversation involves memory operations (writing observations, recalling past decisions, etc.), the agent invokes the skill and follows the rules in [SKILL.md](SKILL.md). At `Stop`, the hook only interrupts when a memory writeback is likely useful.
 
 The skill enforces:
 - Every memory file has YAML frontmatter with `confidence`, `importance`, `evidence`, `status`, `created_at`

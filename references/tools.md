@@ -93,6 +93,27 @@ python3 tools/daily-status.py --format json   # 机器读
 
 **零副作用**。退出码 1 表示有 actionable issue，可被 cron 用作告警。
 
+## memory-hook.py / install-hooks.py
+
+**何时用**：安装 Claude Code / Codex 生命周期 hook；在 `SessionStart` 注入索引；在 `Stop` 用 dirty/阈值启发式提醒 agent 检查 session 写入。
+
+```bash
+python3 tools/install-hooks.py --target both
+python3 tools/install-hooks.py --target claude --threshold-lines 160
+python3 tools/install-hooks.py --target codex
+```
+
+安装目标：
+- Claude Code：合并写入 `~/.claude/settings.json`
+- Codex：合并写入 `~/.codex/hooks.json`
+
+运行时行为：
+- `SessionStart`：读取 `~/.memory/MEMORY.md` 并作为 hook JSON `additionalContext` 输出
+- `PostToolUse`：只有 `Edit` / `Write` / `Bash` 标记本轮 dirty
+- `Stop`：只有 dirty 或 transcript 行数跨越阈值时输出 `decision: "block"`
+
+Stop block 是"检查点"不是"强制写入"。Agent 必须判断本轮是否学到 durable 信息；没有就说明不写并结束。
+
 ## aggregate-monthly.py / aggregate-yearly.py
 
 **何时用**：每月初聚合上月、每年初聚合上年。模式与 `aggregate-daily.py` 一致，只产生草稿，由 agent 复核后写入 `monthly/YYYY/MM.md` 或 `yearly/YYYY.md`。

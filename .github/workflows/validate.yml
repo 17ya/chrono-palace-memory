@@ -19,6 +19,10 @@ jobs:
         run: python3 tests/test_tfidf.py
       - name: Concurrency regression test (file_lock + atomic_write)
         run: python3 tests/test_concurrency.py
+      - name: Memory hook heuristic regression test
+        run: python3 tests/test_memory_hook.py
+      - name: Hook installer merge regression test
+        run: python3 tests/test_install_hooks.py
 
   smoke-tools:
     runs-on: ubuntu-latest
@@ -30,7 +34,7 @@ jobs:
       - name: Each tool runs --help without crashing
         run: |
           set -e
-          for t in tools/validate.py tools/search.py tools/aggregate-daily.py tools/aggregate-monthly.py tools/aggregate-yearly.py tools/expire-sessions.py tools/find-conflicts.py tools/forget.py tools/daily-status.py tools/migrate.py tools/embed.py tools/sync.py; do
+          for t in tools/validate.py tools/search.py tools/aggregate-daily.py tools/aggregate-monthly.py tools/aggregate-yearly.py tools/expire-sessions.py tools/find-conflicts.py tools/forget.py tools/daily-status.py tools/migrate.py tools/embed.py tools/sync.py tools/memory-hook.py tools/install-hooks.py; do
             echo "--- $t --help ---"
             python3 "$t" --help
           done
