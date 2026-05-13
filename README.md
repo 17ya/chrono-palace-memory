@@ -85,34 +85,39 @@ Upper layers must always link back to evidence in lower layers.
 
 ## Install
 
-There is no installer binary — installation is performed by your agent. Clone this repo somewhere stable (e.g. `~/code/chrono-palace-memory`), then paste the prompt below verbatim into a Claude Code (or Codex) session.
+There is no installer binary — installation is performed by your agent. Paste the prompt below verbatim into a Claude Code (or Codex) session and it will clone, link, bootstrap the memory store, install hooks, and verify.
 
 ### Agent install prompt (copy this)
 
 ````text
-Please install the chrono-palace-memory skill from <REPO_PATH> for me.
+Please install the chrono-palace-memory skill for me.
+
+Source repo: https://github.com/17ya/chrono-palace-memory
+Local clone path: ~/code/chrono-palace-memory   # change if you prefer somewhere else
 
 Perform every step below. Stop and ask only if a step fails:
 
-1. Confirm the repo at <REPO_PATH> contains SKILL.md, tools/install-hooks.py, and templates/MEMORY.md. Abort if any is missing.
+1. Clone (or update) the repo:
+   - If ~/code/chrono-palace-memory does not exist:
+     mkdir -p ~/code && git clone https://github.com/17ya/chrono-palace-memory ~/code/chrono-palace-memory
+   - Otherwise: git -C ~/code/chrono-palace-memory pull --ff-only
+   Then confirm ~/code/chrono-palace-memory contains SKILL.md, tools/install-hooks.py, and templates/MEMORY.md. Abort if any is missing.
 2. Make the skill discoverable by Claude Code:
    - mkdir -p ~/.claude/skills
-   - ln -sfn <REPO_PATH> ~/.claude/skills/chrono-palace-memory
-   (Use a symlink so `git pull` in the repo updates the skill in place. If symlinks are blocked, `cp -R` instead.)
+   - ln -sfn ~/code/chrono-palace-memory ~/.claude/skills/chrono-palace-memory
+   (Symlink lets `git pull` in the clone update the skill in place. If symlinks are blocked, `cp -R` instead.)
 3. Initialize the memory store at ~/.memory/ if it does not exist:
    - mkdir -p ~/.memory
-   - If ~/.memory/MEMORY.md is absent, copy templates/MEMORY.md to ~/.memory/MEMORY.md.
+   - If ~/.memory/MEMORY.md is absent, copy ~/code/chrono-palace-memory/templates/MEMORY.md to ~/.memory/MEMORY.md.
    - Do NOT touch ~/.memory/ if MEMORY.md already exists — that means a store is already in use.
 4. Install the required lifecycle hooks:
-   - python3 <REPO_PATH>/tools/install-hooks.py --target both
+   - python3 ~/code/chrono-palace-memory/tools/install-hooks.py --target both
    (Use `--target claude` if Codex is not installed. The installer merges into existing settings.json / hooks.json.)
 5. Verify the install:
-   - python3 <REPO_PATH>/tools/validate.py    # must exit 0
+   - python3 ~/code/chrono-palace-memory/tools/validate.py    # must exit 0
    - cat ~/.claude/settings.json | python3 -m json.tool | grep memory-hook   # confirms hook command is present
 6. Print a one-line summary: skill path, memory store path, hook threshold. Then tell me to restart Claude Code.
 ````
-
-Replace `<REPO_PATH>` with the absolute path to your clone before pasting.
 
 After the agent finishes, **restart Claude Code**. The skill becomes discoverable in any session, the `SessionStart` hook injects `~/.memory/MEMORY.md` as context, and the `Stop` hook enforces the memory writeback check.
 
