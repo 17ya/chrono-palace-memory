@@ -98,6 +98,17 @@ def main() -> int:
         if out.decision:
             failures.append("Threshold-triggered continuation should also be recursion-safe")
 
+    # Threshold clamp: out-of-range values must be coerced into a sane range
+    # so a typo in the installer command doesn't disable the writeback prompt.
+    if hook._clamp_threshold(0) != hook.MIN_THRESHOLD_LINES:
+        failures.append("clamp(0) should return MIN_THRESHOLD_LINES")
+    if hook._clamp_threshold(-1) != hook.MIN_THRESHOLD_LINES:
+        failures.append("clamp(-1) should return MIN_THRESHOLD_LINES")
+    if hook._clamp_threshold(999_999) != hook.MAX_THRESHOLD_LINES:
+        failures.append("clamp(999_999) should return MAX_THRESHOLD_LINES")
+    if hook._clamp_threshold(120) != 120:
+        failures.append("clamp(120) should pass through unchanged")
+
     if failures:
         print("FAIL")
         for failure in failures:

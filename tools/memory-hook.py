@@ -20,7 +20,24 @@ import _lib as lib
 
 
 DEFAULT_THRESHOLD_LINES = 120
+MIN_THRESHOLD_LINES = 40
+MAX_THRESHOLD_LINES = 1000
 DIRTY_TOOLS = {"Edit", "Write", "Bash"}
+
+
+def _clamp_threshold(value: int) -> int:
+    """Keep --threshold-lines in a sane range.
+
+    Below MIN_THRESHOLD_LINES the Stop hook would block almost every turn;
+    above MAX_THRESHOLD_LINES it would never fire. Both effectively disable
+    the writeback prompt, so we clamp instead of erroring — installer
+    invocations stay forgiving.
+    """
+    if value < MIN_THRESHOLD_LINES:
+        return MIN_THRESHOLD_LINES
+    if value > MAX_THRESHOLD_LINES:
+        return MAX_THRESHOLD_LINES
+    return value
 
 
 @dataclass
@@ -217,7 +234,8 @@ def main() -> int:
         event = json.load(sys.stdin)
     except json.JSONDecodeError:
         event = {}
-    output = handle_event(event, root=args.root, threshold_lines=args.threshold_lines)
+    threshold = _clamp_threshold(args.threshold_lines)
+    output = handle_event(event, root=args.root, threshold_lines=threshold)
     output.emit()
     return 0
 

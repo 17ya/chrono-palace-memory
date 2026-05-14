@@ -3,7 +3,9 @@
 
 Checks performed:
 - every memory file has YAML frontmatter
-- required fields are present per type (name / type / created_at / status)
+- required fields are present (name / type / created_at / status / confidence /
+  importance / evidence) — `evidence: []` is allowed for sessions but the key
+  must be present
 - upper-layer files (daily / palace / entity / reflection) have non-empty `evidence:`
 - every `evidence:` path resolves under <root>
 - every [[name]] wikilink resolves to some other file's frontmatter `name:`
@@ -36,7 +38,15 @@ from datetime import timedelta
 import _lib as lib
 
 
-REQUIRED_FIELDS = {"name", "type", "created_at", "status"}
+REQUIRED_FIELDS = {
+    "name",
+    "type",
+    "created_at",
+    "status",
+    "confidence",
+    "importance",
+    "evidence",
+}
 EVIDENCE_REQUIRED_TYPES = {"daily", "palace", "entity", "reflection"}
 WIKILINK_RE = re.compile(r"\[\[([a-z0-9][a-z0-9-]*)\]\]")
 SESSION_TTL_DAYS = 30
@@ -107,7 +117,11 @@ def main() -> int:
     for name, fs in names_to_files.items():
         if len(fs) > 1:
             paths = ", ".join(f.rel_path for f in fs)
-            errors.append(f"duplicate frontmatter name {name!r} in: {paths}")
+            errors.append(
+                f"duplicate frontmatter name {name!r} in: {paths} "
+                "— keep one as active and mark the others status: superseded "
+                "with superseded_by pointing at the survivor"
+            )
 
     # Pass 2: evidence paths and wikilinks resolve
     name_index = set(names_to_files.keys())

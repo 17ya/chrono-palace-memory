@@ -60,6 +60,56 @@ def main() -> int:
     except TypeError as exc:
         failures.append(f"merged config is not JSON serializable: {exc}")
 
+    # Prefix-based dedup: re-running the installer with a *different*
+    # --threshold-lines must replace the existing memory-hook entry, not append
+    # a second one. Otherwise both old and new hooks fire on every event.
+    cmd_v1 = "python3 /repo/tools/memory-hook.py --threshold-lines 120"
+    cmd_v2 = "python3 /repo/tools/memory-hook.py --threshold-lines 200"
+    rerun = installer.merge_hooks_config({}, cmd_v1)
+    rerun = installer.merge_hooks_config(rerun, cmd_v2)
+    for event in ("SessionStart", "PostToolUse", "Stop"):
+        groups = rerun.get("hooks", {}).get(event, [])
+        memory_hook_cmds = [
+            h.get("command")
+            for g in groups
+            for h in g.get("hooks", [])
+            if isinstance(h, dict)
+            and isinstance(h.get("command"), str)
+            and "memory-hook.py" in h.get("command", "")
+        ]
+        if memory_hook_cmds != [cmd_v2]:
+            failures.append(
+                f"{event}: rerun should replace memory-hook command, "
+                f"got {memory_hook_cmds!r}"
+            )
+
+    # Pre-existing duplicate hook entries (from a buggy older installer) should
+    # be collapsed to one entry on the next run.
+    polluted = {
+        "hooks": {
+            "Stop": [
+                {"hooks": [
+                    {"type": "command", "command": "python3 /old/tools/memory-hook.py --threshold-lines 80"},
+                    {"type": "command", "command": "python3 /old/tools/memory-hook.py --threshold-lines 90"},
+                ]},
+            ],
+        },
+    }
+    cleaned = installer.merge_hooks_config(polluted, cmd_v2)
+    stop_groups = cleaned["hooks"]["Stop"]
+    memory_hook_cmds = [
+        h.get("command")
+        for g in stop_groups
+        for h in g.get("hooks", [])
+        if isinstance(h, dict)
+        and isinstance(h.get("command"), str)
+        and "memory-hook.py" in h.get("command", "")
+    ]
+    if memory_hook_cmds != [cmd_v2]:
+        failures.append(
+            f"polluted config should collapse to single hook, got {memory_hook_cmds!r}"
+        )
+
     if failures:
         print("FAIL")
         for failure in failures:

@@ -110,9 +110,11 @@ Perform every step below. Stop and ask only if a step fails:
    - mkdir -p ~/.memory
    - If ~/.memory/MEMORY.md is absent, copy ~/code/chrono-palace-memory/templates/MEMORY.md to ~/.memory/MEMORY.md.
    - Do NOT touch ~/.memory/ if MEMORY.md already exists — that means a store is already in use.
-4. Install the required lifecycle hooks:
-   - python3 ~/code/chrono-palace-memory/tools/install-hooks.py --target both
-   (Use `--target claude` if Codex is not installed. The installer merges into existing settings.json / hooks.json.)
+4. Install the required lifecycle hooks. Pick one of:
+   - python3 ~/code/chrono-palace-memory/tools/install-hooks.py --target claude    # Claude Code only
+   - python3 ~/code/chrono-palace-memory/tools/install-hooks.py --target codex     # Codex only
+   - python3 ~/code/chrono-palace-memory/tools/install-hooks.py --target both      # both (default; auto-skips Codex if ~/.codex/ is absent)
+   The installer merges into existing settings.json / hooks.json without overwriting other hooks. Re-running with a different `--threshold-lines` updates the existing entry in place.
 5. Verify the install:
    - python3 ~/code/chrono-palace-memory/tools/validate.py    # must exit 0
    - cat ~/.claude/settings.json | python3 -m json.tool | grep memory-hook   # confirms hook command is present
@@ -120,6 +122,23 @@ Perform every step below. Stop and ask only if a step fails:
 ````
 
 After the agent finishes, **restart Claude Code**. The skill becomes discoverable in any session, the `SessionStart` hook injects `~/.memory/MEMORY.md` as context, and the `Stop` hook enforces the memory writeback check.
+
+### Quickstart: your first writeback
+
+Once installed, this is what a normal first run looks like — use it as a smoke test:
+
+1. Start a fresh Claude Code session in any directory. The `SessionStart` hook should inject a banner that begins with `chrono-palace memory index loaded from ~/.memory/MEMORY.md.` If you don't see it, the hook isn't wired up — re-run step 5 of the install prompt.
+2. Tell Claude something durable about yourself, e.g. *"My name is Alex and I'm a Rust developer working on a CLI called `tally`."*
+3. End the turn. The `Stop` hook will block once and prompt: *"Chrono-Palace memory check required before final response..."* Claude responds by writing `~/.memory/sessions/YYYY/MM/DD/session_001.md` and adding an index line to `~/.memory/MEMORY.md`.
+4. Verify on disk:
+   ```bash
+   ls ~/.memory/sessions/$(date +%Y/%m/%d)/        # session_001.md exists
+   cat ~/.memory/MEMORY.md | grep session_001       # index updated
+   python3 ~/code/chrono-palace-memory/tools/validate.py   # exits 0
+   ```
+5. The next day (or whenever you have ≥1 unpromoted session), run `/memory-aggregate` (or `python3 tools/aggregate-daily.py`) to collapse sessions into `~/.memory/daily/YYYY/MM/DD.md`. After ≥2 evidence the same fact gets proposed for `~/.memory/entities/` and after ≥3 for `~/.memory/palace/`.
+
+If step 3 doesn't trigger the Stop hook, the most likely cause is that the turn touched no `Edit` / `Write` / `Bash` tool — the hook only nudges when the turn is "dirty". Run any shell command (e.g. `echo hi`) in the same turn and try again.
 
 ### Required: lifecycle hooks
 
@@ -170,7 +189,7 @@ git -C ~/.memory push -u origin main
 python3 tools/sync.py     # pull-rebase + commit + push, holds the write lock
 ```
 
-The init step writes a `.gitignore` excluding machine-local state (locks, embedding cache, audit logs). Conflict resolution uses the same supersede-chain pattern as the rest of the skill. See [references/sync.md](references/sync.md).
+The init step writes a `.gitignore` excluding machine-local state (locks, embedding cache, audit logs). When two machines edit the same memory file between syncs, `tools/sync.py` falls back to a normal git rebase — Markdown conflicts must be resolved by hand. The supersede-chain pattern still applies for the higher-level "two contradictory memories" case (mark one `superseded_by` the other); it is not run automatically by the sync tool. See [references/sync.md](references/sync.md).
 
 **Use a private remote.** Memory contains your conversations and identity.
 

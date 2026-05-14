@@ -83,13 +83,25 @@ def _score_query_semantic(
 # ---------- Neural backend (optional) ----------
 
 def _neural_available(root: pathlib.Path) -> tuple[bool, str | None]:
-    """Return (True, model_name) if neural cache exists AND library importable."""
+    """Return (True, model_name) if neural cache exists AND library importable.
+
+    If the cache exists but sentence-transformers cannot be imported, emit a
+    one-line stderr warning so the user notices the silent downgrade — they
+    likely built a cache previously and a later environment change removed
+    the library.
+    """
     cache = root / ".cache" / "embeddings.sqlite"
     if not cache.exists():
         return False, None
     try:
         import sentence_transformers  # noqa: F401
     except ImportError:
+        print(
+            f"warning: neural embedding cache exists at {cache} but "
+            "sentence-transformers is not importable; falling back to TF-IDF. "
+            "Run `pip install -r requirements-optional.txt` to restore neural search.",
+            file=sys.stderr,
+        )
         return False, None
     conn = sqlite3.connect(str(cache))
     row = conn.execute(

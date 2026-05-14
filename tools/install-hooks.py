@@ -47,14 +47,47 @@ def install_codex(hooks_path: pathlib.Path, command: str) -> None:
     _write_json(hooks_path, merged)
 
 
+_HOOK_MARKER = "memory-hook.py"
+
+
+def _is_memory_hook(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    cmd = entry.get("command")
+    return isinstance(cmd, str) and _HOOK_MARKER in cmd
+
+
 def _ensure_command_group(groups: list[Any], template: dict[str, Any], command: str) -> None:
+    """Insert (or replace) the chrono-palace hook for this event group.
+
+    Re-running the installer with a different `--threshold-lines` (or after the
+    repo path has moved) must update the existing entry in place rather than
+    appending a duplicate. We dedup on the `memory-hook.py` substring instead
+    of full string equality so the command can change while the hook stays
+    unique.
+    """
     for group in groups:
         if not isinstance(group, dict):
             continue
         group_hooks = group.get("hooks")
         if not isinstance(group_hooks, list):
             continue
-        if any(isinstance(h, dict) and h.get("command") == command for h in group_hooks):
+        replaced = False
+        for idx, hook in enumerate(group_hooks):
+            if _is_memory_hook(hook):
+                group_hooks[idx] = {"type": "command", "command": command}
+                replaced = True
+        if replaced:
+            # Drop any leftover duplicates from prior buggy installs.
+            seen = False
+            kept: list[Any] = []
+            for h in group_hooks:
+                if _is_memory_hook(h):
+                    if seen:
+                        continue
+                    seen = True
+                kept.append(h)
+            group["hooks"] = kept
             return
 
     group = {k: v for k, v in template.items() if k != "hooks"}
@@ -109,16 +142,33 @@ def main() -> int:
     command = _default_command(args.repo_root.expanduser().resolve(), args.threshold_lines)
 
     installed: list[str] = []
+    skipped: list[tuple[str, str]] = []
+
     if args.target in {"claude", "both"}:
-        install_claude(args.claude_settings.expanduser(), command)
-        installed.append(str(args.claude_settings.expanduser()))
+        claude_settings = args.claude_settings.expanduser()
+        # Claude Code dir is created by the CLI on first run; install always
+        # writes settings.json (creating ~/.claude/ if necessary) because that
+        # is the documented happy path.
+        install_claude(claude_settings, command)
+        installed.append(str(claude_settings))
+
     if args.target in {"codex", "both"}:
-        install_codex(args.codex_hooks.expanduser(), command)
-        installed.append(str(args.codex_hooks.expanduser()))
+        codex_hooks = args.codex_hooks.expanduser()
+        codex_dir = codex_hooks.parent
+        if args.target == "both" and not codex_dir.exists():
+            # Don't fabricate a Codex install directory just because the user
+            # accepted the `both` default. If they explicitly pass --target codex,
+            # honor it and create the directory.
+            skipped.append((str(codex_hooks), "Codex directory not found"))
+        else:
+            install_codex(codex_hooks, command)
+            installed.append(str(codex_hooks))
 
     print("Installed chrono-palace-memory hooks:")
     for path in installed:
         print(f"  - {path}")
+    for path, reason in skipped:
+        print(f"  - skipped {path} ({reason}; pass --target codex to force)")
     return 0
 
 
